@@ -1,0 +1,18 @@
+{
+  "name": "bot",
+  "version": "0.0.1",
+  "description": "Bot API",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "hetmastertje",
+  "license": "See license in license",
+  "dependencies": {
+    "axios": "^1.9.0",
+    "cli-table3": "^0.6.5",
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0"
+  }
+}
