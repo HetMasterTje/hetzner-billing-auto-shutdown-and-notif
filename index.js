@@ -14,6 +14,7 @@ const {
   THRESHOLD_PERCENT_KILL = 90,
   SEND_USAGE_NOTIF_ALWAYS = 'false',
   OBFUSCATE_SERVER_NAMES_FROM_CONSOLE_LOG = 'false',
+  REFRESH_TIME_IN_MINUTES = 10,
 } = process.env;
 
 const DATA_FILE = './data.json';
@@ -171,7 +172,7 @@ client.once('ready', async () => {
   await checkAndUpdate(channel);
 
   // Optional: auto-update every X minutes
-  setInterval(() => checkAndUpdate(channel), 10 * 60 * 1000); // every 10 minutes
+  setInterval(() => checkAndUpdate(channel), REFRESH_TIME_IN_MINUTES * 60 * 1000); // every 10 minutes
 });
 
 client.login(DISCORD_TOKEN);
