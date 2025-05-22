@@ -8,6 +8,7 @@ dotenv.config();
 const {
   DISCORD_TOKEN,
   CHANNEL_ID,
+  MESSAGE_ID,
   HETZNER_API_TOKEN,
   THRESHOLD_PERCENT_NOTIF = 50,
   THRESHOLD_PERCENT_KILL = 90,
@@ -28,7 +29,7 @@ let embedMessage = null;
 const loadMessageId = async () => {
   try {
     const data = await fs.readFile(DATA_FILE, 'utf8');
-    return JSON.parse(data).messageId;
+    return MESSAGE_ID;
   } catch {
     return null;
   }
