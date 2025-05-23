@@ -45,8 +45,16 @@ const obfuscateServerName = (name) => {
   return `${name[0]}${'X'.repeat(name.length - 2)}${name[name.length - 1]}`;
 };
 
-const bytesToTB = (bytes, precision = 2) =>
-  (bytes / 1024 ** 4).toFixed(precision);
+const formatBytes = (bytes) => {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let value = bytes;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i++;
+  }
+  return `${value.toFixed(3)} ${units[i]}`;
+};
 
 const calculatePercentage = (used, total) =>
   total ? ((used / total) * 100).toFixed(2) : '0.00';
@@ -63,9 +71,7 @@ const shutdownServer = async (id) => {
     await axios.post(
       `https://api.hetzner.cloud/v1/servers/${id}/actions/shutdown`,
       {},
-      {
-        headers: { Authorization: `Bearer ${HETZNER_API_TOKEN}` },
-      },
+      { headers: { Authorization: `Bearer ${HETZNER_API_TOKEN}` } },
     );
     return true;
   } catch (err) {
@@ -74,7 +80,7 @@ const shutdownServer = async (id) => {
   }
 };
 
-const buildEmbed = (servers, killed, allServers, statusOnly = false) => {
+const buildEmbed = (servers, killed) => {
   const embed = new EmbedBuilder()
     .setTitle('🌐 Hetzner Server Usage Report')
     .setColor(
@@ -88,7 +94,7 @@ const buildEmbed = (servers, killed, allServers, statusOnly = false) => {
       value: killed
         .map(
           (s) =>
-            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${s.outgoingTB}/${s.limitTB} TB)`,
+            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${formatBytes(s.outgoing)} / ${formatBytes(s.limit)})`,
         )
         .join('\n'),
     });
@@ -103,30 +109,45 @@ const buildEmbed = (servers, killed, allServers, statusOnly = false) => {
       value: servers
         .map(
           (s) =>
-            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${s.outgoingTB}/${s.limitTB} TB)`,
+            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${formatBytes(s.outgoing)} / ${formatBytes(s.limit)})`,
         )
         .join('\n'),
     });
   }
 
-  const totalOutgoing = allData.reduce(
-    (sum, s) => sum + parseFloat(s.outgoingTB),
-    0,
-  );
-  const totalLimit = allData.reduce((sum, s) => sum + parseFloat(s.limitTB), 0);
-
-  embed.addFields({
-    name: '📊 Overall Usage',
-    value: `${totalOutgoing.toFixed(2)} / ${totalLimit.toFixed(2)} TB used across ${allServers.length} servers`,
-  });
-
-  if (sendAlways && servers.length === 0 && killed.length === 0 && statusOnly) {
-    embed.setDescription(
-      `✅ All ${allServers.length} servers are within usage limits.`,
-    );
-  }
-
   return embed;
+};
+
+const buildServerEmbeds = (servers) => {
+  return servers.map((s) => {
+    return new EmbedBuilder()
+      .setTitle(`🖥️ ${obfuscateServerName(s.name)}`)
+      .addFields(
+        { name: 'Status', value: s.status, inline: true },
+        { name: 'Usage', value: `${s.usagePercentage}%`, inline: true },
+        {
+          name: 'Traffic',
+          value: `${formatBytes(s.outgoing)} / ${formatBytes(s.limit)}`,
+          inline: true,
+        },
+      )
+      .setColor(
+        s.rawPercentage >= THRESHOLD_PERCENT_KILL / 100
+          ? 0xff0000
+          : s.rawPercentage >= THRESHOLD_PERCENT_NOTIF / 100
+            ? 0xffa500
+            : 0x00ff00,
+      )
+      .setTimestamp();
+  });
+};
+
+const buildFinalStatusEmbed = (serverCount) => {
+  return new EmbedBuilder()
+    .setTitle('🌐 Hetzner Server Usage Report')
+    .setDescription(`✅ All ${serverCount} servers are within usage limits.`)
+    .setColor(0x00ff00)
+    .setTimestamp();
 };
 
 const checkAndUpdate = async (channel) => {
@@ -143,8 +164,8 @@ const checkAndUpdate = async (channel) => {
       id: s.id,
       name: s.name,
       status: s.status,
-      outgoingTB: bytesToTB(outgoing),
-      limitTB: bytesToTB(limit),
+      outgoing,
+      limit,
       usagePercentage: percent,
       rawPercentage: limit ? outgoing / limit : 0,
     };
@@ -163,37 +184,41 @@ const checkAndUpdate = async (channel) => {
     if (success) killed.push(server);
   }
 
-  const embed = buildEmbed(highUsage, killed, allData, true);
+  const embed = buildEmbed(highUsage, killed);
+  const serverEmbeds = buildServerEmbeds(allData);
 
-  if (!embedMessage) {
-    const messageId = await loadMessageId();
-    if (messageId) {
-      try {
-        embedMessage = await channel.messages.fetch(messageId);
-        await embedMessage.edit({ embeds: [embed] });
-      } catch {
-        embedMessage = await channel.send({ embeds: [embed] });
-        await saveMessageId(embedMessage.id);
-      }
-    } else {
-      embedMessage = await channel.send({ embeds: [embed] });
-      await saveMessageId(embedMessage.id);
-    }
-  } else {
-    await embedMessage.edit({ embeds: [embed] });
+  for (const e of serverEmbeds) {
+    await channel.send({ embeds: [e] });
+  }
+
+  if (highUsage.length > 0 || killed.length > 0) {
+    await channel.send({ embeds: [embed] });
+  } else if (sendAlways) {
+    const finalEmbed = buildFinalStatusEmbed(allData.length);
+    await channel.send({ embeds: [finalEmbed] });
   }
 };
 
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   const channel = await client.channels.fetch(CHANNEL_ID);
-  await checkAndUpdate(channel);
 
-  // Optional: auto-update every X minutes
+  // Delete all messages in channel
+  if (channel.isTextBased()) {
+    let messages;
+    do {
+      messages = await channel.messages.fetch({ limit: 100 });
+      if (messages.size > 0) {
+        await channel.bulkDelete(messages);
+      }
+    } while (messages.size >= 2);
+  }
+
+  await checkAndUpdate(channel);
   setInterval(
     () => checkAndUpdate(channel),
     REFRESH_TIME_IN_MINUTES * 60 * 1000,
-  ); // every 10 minutes
+  );
 });
 
 client.login(DISCORD_TOKEN);
