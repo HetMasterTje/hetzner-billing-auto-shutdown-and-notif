@@ -65,7 +65,7 @@ const shutdownServer = async (id) => {
       {},
       {
         headers: { Authorization: `Bearer ${HETZNER_API_TOKEN}` },
-      }
+      },
     );
     return true;
   } catch (err) {
@@ -77,7 +77,9 @@ const shutdownServer = async (id) => {
 const buildEmbed = (servers, killed, allServers, statusOnly = false) => {
   const embed = new EmbedBuilder()
     .setTitle('🌐 Hetzner Server Usage Report')
-    .setColor(killed.length > 0 ? 0xff0000 : servers.length > 0 ? 0xffa500 : 0x00ff00)
+    .setColor(
+      killed.length > 0 ? 0xff0000 : servers.length > 0 ? 0xffa500 : 0x00ff00,
+    )
     .setTimestamp();
 
   if (killed.length > 0) {
@@ -86,7 +88,7 @@ const buildEmbed = (servers, killed, allServers, statusOnly = false) => {
       value: killed
         .map(
           (s) =>
-            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${s.outgoingTB}/${s.limitTB} TB)`
+            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${s.outgoingTB}/${s.limitTB} TB)`,
         )
         .join('\n'),
     });
@@ -94,18 +96,34 @@ const buildEmbed = (servers, killed, allServers, statusOnly = false) => {
 
   if (servers.length > 0) {
     embed.addFields({
-      name: killed.length > 0 ? '⚠️ High Usage Servers' : '⚠️ Servers Over Threshold',
+      name:
+        killed.length > 0
+          ? '⚠️ High Usage Servers'
+          : '⚠️ Servers Over Threshold',
       value: servers
         .map(
           (s) =>
-            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${s.outgoingTB}/${s.limitTB} TB)`
+            `**${obfuscateServerName(s.name)}**: ${s.usagePercentage}% (${s.outgoingTB}/${s.limitTB} TB)`,
         )
         .join('\n'),
     });
   }
 
+  const totalOutgoing = allData.reduce(
+    (sum, s) => sum + parseFloat(s.outgoingTB),
+    0,
+  );
+  const totalLimit = allData.reduce((sum, s) => sum + parseFloat(s.limitTB), 0);
+
+  embed.addFields({
+    name: '📊 Overall Usage',
+    value: `${totalOutgoing.toFixed(2)} / ${totalLimit.toFixed(2)} TB used across ${allServers.length} servers`,
+  });
+
   if (sendAlways && servers.length === 0 && killed.length === 0 && statusOnly) {
-    embed.setDescription(`✅ All ${allServers.length} servers are within usage limits.`);
+    embed.setDescription(
+      `✅ All ${allServers.length} servers are within usage limits.`,
+    );
   }
 
   return embed;
@@ -172,7 +190,10 @@ client.once('ready', async () => {
   await checkAndUpdate(channel);
 
   // Optional: auto-update every X minutes
-  setInterval(() => checkAndUpdate(channel), REFRESH_TIME_IN_MINUTES * 60 * 1000); // every 10 minutes
+  setInterval(
+    () => checkAndUpdate(channel),
+    REFRESH_TIME_IN_MINUTES * 60 * 1000,
+  ); // every 10 minutes
 });
 
 client.login(DISCORD_TOKEN);
