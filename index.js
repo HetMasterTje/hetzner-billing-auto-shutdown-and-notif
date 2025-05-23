@@ -25,7 +25,7 @@ const client = new Client({
 const obfuscate = OBFUSCATE_SERVER_NAMES_FROM_CONSOLE_LOG === 'true';
 const sendAlways = SEND_USAGE_NOTIF_ALWAYS === 'true';
 
-let embedMessage = null;
+let embedMessages = {};  // Store embed messages in memory
 
 const loadMessageId = async () => {
   try {
@@ -187,15 +187,33 @@ const checkAndUpdate = async (channel) => {
   const embed = buildEmbed(highUsage, killed);
   const serverEmbeds = buildServerEmbeds(allData);
 
+  // Send or update server embeds
   for (const e of serverEmbeds) {
-    await channel.send({ embeds: [e] });
+    // Check if embed already exists in memory
+    const existingMessage = embedMessages[e.data.title];  // Using the title as a key for simplicity
+    if (existingMessage) {
+      await existingMessage.edit({ embeds: [e] });
+    } else {
+      const message = await channel.send({ embeds: [e] });
+      embedMessages[e.data.title] = message; // Store the message reference by title
+    }
   }
 
   if (highUsage.length > 0 || killed.length > 0) {
-    await channel.send({ embeds: [embed] });
+    if (embedMessages['Server Usage Report']) {
+      await embedMessages['Server Usage Report'].edit({ embeds: [embed] });
+    } else {
+      const message = await channel.send({ embeds: [embed] });
+      embedMessages['Server Usage Report'] = message;
+    }
   } else if (sendAlways) {
     const finalEmbed = buildFinalStatusEmbed(allData.length);
-    await channel.send({ embeds: [finalEmbed] });
+    if (embedMessages['Final Server Status']) {
+      await embedMessages['Final Server Status'].edit({ embeds: [finalEmbed] });
+    } else {
+      const message = await channel.send({ embeds: [finalEmbed] });
+      embedMessages['Final Server Status'] = message;
+    }
   }
 };
 
@@ -203,7 +221,7 @@ client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   const channel = await client.channels.fetch(CHANNEL_ID);
 
-  // Delete all messages in channel
+  // Delete all messages in channel to reset
   if (channel.isTextBased()) {
     let messages;
     do {
