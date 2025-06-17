@@ -227,11 +227,38 @@ client.once('ready', async () => {
     do {
       messages = await channel.messages.fetch({ limit: 100 });
       if (messages.size > 0) {
-        await channel.bulkDelete(messages);
+        const now = Date.now();
+        const twoWeeks = 14 * 24 * 60 * 60 * 1000;
+  
+        // Separate messages by age
+        const toBulkDelete = [];
+        const toDeleteIndividually = [];
+  
+        for (const msg of messages.values()) {
+          if (now - msg.createdTimestamp < twoWeeks) {
+            toBulkDelete.push(msg);
+          } else {
+            toDeleteIndividually.push(msg);
+          }
+        }
+  
+        // Bulk delete recent messages
+        if (toBulkDelete.length > 0) {
+          await channel.bulkDelete(toBulkDelete);
+        }
+  
+        // Delete old messages one by one
+        for (const msg of toDeleteIndividually) {
+          try {
+            await msg.delete();
+          } catch (err) {
+            console.error(`Failed to delete message ${msg.id}:`, err);
+          }
+        }
       }
     } while (messages.size >= 2);
   }
-
+  
   await checkAndUpdate(channel);
   setInterval(
     () => checkAndUpdate(channel),
