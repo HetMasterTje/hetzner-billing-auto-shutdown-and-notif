@@ -17,10 +17,17 @@ const {
   REFRESH_TIME_IN_MINUTES = 10,
 } = process.env;
 
+const apiTokens = (HETZNER_API_TOKEN || '')
+  .split(',')
+  .map((t) => t.trim())
+  .filter(Boolean);
+
 const DATA_FILE = './data.json';
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
+
+
 
 const obfuscate = OBFUSCATE_SERVER_NAMES_FROM_CONSOLE_LOG === 'true';
 const sendAlways = SEND_USAGE_NOTIF_ALWAYS === 'true';
@@ -60,22 +67,38 @@ const calculatePercentage = (used, total) =>
   total ? ((used / total) * 100).toFixed(2) : '0.00';
 
 const fetchServers = async () => {
-  const res = await axios.get('https://api.hetzner.cloud/v1/servers', {
-    headers: { Authorization: `Bearer ${HETZNER_API_TOKEN}` },
-  });
-  return res.data.servers;
+  const allServers = [];
+  
+  for (const token of apiTokens) {
+    try {
+      const res = await axios.get('https://api.hetzner.cloud/v1/servers', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const servers = res.data.servers.map((s) => ({
+        ...s,
+        _apiToken: token, 
+      }));
+
+      allServers.push(...servers);
+    } catch (err) {
+      console.error(`Failed to fetch servers with token ${token.slice(0, 6)}...`);
+    }
+  }
+  return allServers;
 };
 
-const shutdownServer = async (id) => {
+
+const shutdownServer = async (id, token) => {
   try {
     await axios.post(
       `https://api.hetzner.cloud/v1/servers/${id}/actions/shutdown`,
       {},
-      { headers: { Authorization: `Bearer ${HETZNER_API_TOKEN}` } },
+      { headers: { Authorization: `Bearer ${token}` } },
     );
     return true;
   } catch (err) {
-    console.error(`Failed to shut down server ${id}: ${err.message}`);
+    console.error(`❌ Failed to shut down server ${id}: ${err.message}`);
     return false;
   }
 };
@@ -180,7 +203,7 @@ const checkAndUpdate = async (channel) => {
   }
 
   for (const server of toKill) {
-    const success = await shutdownServer(server.id);
+    const success = await shutdownServer(server.id, server._apiToken);
     if (success) killed.push(server);
   }
 
